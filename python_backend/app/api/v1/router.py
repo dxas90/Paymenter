@@ -1,5 +1,5 @@
 from fastapi import APIRouter
-from app.api.v1.endpoints import auth, users, services, invoices, tickets, orders, profile
+from app.api.v1.endpoints import auth, users, services, invoices, tickets, orders, profile, extensions
 
 api_router = APIRouter()
 
@@ -15,3 +15,4 @@ api_router.include_router(orders.router, prefix="/admin/orders", tags=["Admin - 
 api_router.include_router(services.router, prefix="/admin/services", tags=["Admin - Services"])
 api_router.include_router(invoices.router, prefix="/admin/invoices", tags=["Admin - Invoices"])
 api_router.include_router(tickets.router, prefix="/admin/tickets", tags=["Admin - Tickets"])
+api_router.include_router(extensions.router, prefix="/admin/extensions", tags=["Admin - Extensions"])

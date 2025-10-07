@@ -10,6 +10,7 @@ This is a Python reimplementation of the Paymenter billing system backend using 
 - **Database Support**: SQLAlchemy ORM with MySQL/MariaDB support
 - **API Documentation**: Auto-generated interactive API docs (Swagger UI)
 - **Admin API**: Complete admin endpoints for managing users, services, invoices, and tickets
+- **Extension System**: Support for server provisioning, payment gateways, and integrations
 
 ## Requirements
 
@@ -115,6 +116,30 @@ Once the server is running, you can access:
 - `DELETE /api/v1/admin/tickets/{ticket_id}` - Delete ticket
 - `POST /api/v1/admin/tickets/{ticket_id}/messages` - Add message to ticket
 
+### Admin - Extensions
+- `GET /api/v1/admin/extensions` - List all available extensions
+- `GET /api/v1/admin/extensions/{category}` - List extensions by category
+- `GET /api/v1/admin/extensions/{category}/{name}/metadata` - Get extension metadata
+- `GET /api/v1/admin/extensions/{category}/{name}/config` - Get extension configuration schema
+
+## Extensions
+
+The Python backend includes a comprehensive extension system for integrating third-party services:
+
+### Server Extensions
+Automate service provisioning with hosting control panels and virtualization platforms:
+- **Proxmox** - Proxmox Virtual Environment integration
+
+### Gateway Extensions
+Process payments through various payment providers:
+- **Stripe** - Stripe payment processing
+
+### Other Extensions
+Additional integrations and features:
+- **Discord Notifications** - Send notifications to Discord
+
+For detailed information about extensions, see [Extensions README](app/extensions/README.md).
+
 ## Authentication
 
 The API uses OAuth2 with JWT tokens. To authenticate:
@@ -142,6 +167,35 @@ python_backend/
 │   │   └── v1/
 │   │       ├── endpoints/       # API endpoint modules
 │   │       │   ├── auth.py
+│   │       │   ├── users.py
+│   │       │   ├── services.py
+│   │       │   ├── invoices.py
+│   │       │   ├── tickets.py
+│   │       │   └── extensions.py
+│   │       └── router.py        # API router configuration
+│   ├── core/
+│   │   ├── config.py           # Configuration and settings
+│   │   ├── database.py         # Database connection
+│   │   └── security.py         # Security utilities
+│   ├── extensions/             # Extension system
+│   │   ├── base.py            # Base extension classes
+│   │   ├── loader.py          # Extension loader
+│   │   ├── servers/           # Server extensions
+│   │   │   └── Proxmox/
+│   │   ├── gateways/          # Payment gateways
+│   │   │   └── Stripe/
+│   │   └── others/            # Other extensions
+│   │       └── DiscordNotifications/
+│   ├── models/
+│   │   └── models.py           # SQLAlchemy models
+│   ├── schemas/
+│   │   └── schemas.py          # Pydantic schemas
+│   └── main.py                 # FastAPI application
+├── tests/                       # Test files (future)
+├── .env.example                # Example environment variables
+├── requirements.txt            # Python dependencies
+└── README.md                   # This file
+```
 │   │       │   ├── users.py
 │   │       │   ├── services.py
 │   │       │   ├── invoices.py
