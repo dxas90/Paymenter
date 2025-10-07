@@ -11,6 +11,34 @@ use Illuminate\Support\Facades\Http;
 class Proxmox extends Server
 {
     /**
+     * Unified request method for Proxmox API
+     *
+     * @param  string  $url
+     * @param  string  $method
+     * @param  array  $data
+     * @return array
+     */
+    public function request($url, $method = 'get', $data = []): array
+    {
+        $req_url = rtrim($this->config('host'), '/').':'.$this->config('port').'/api2/json'.$url;
+        
+        $http = Http::withHeaders([
+            'Authorization' => 'PVEAPIToken='.$this->config('username').'='.$this->config('password'),
+            'Accept' => 'application/json',
+            'Content-Type' => 'application/json',
+        ])->withoutVerifying();
+
+        $response = $http->$method($req_url, $data);
+
+        if (! $response->successful()) {
+            $error = $response->json()['errors'] ?? $response->body();
+            throw new Exception('Proxmox API Error: '.(is_array($error) ? json_encode($error) : $error));
+        }
+
+        return $response->json() ?? [];
+    }
+
+    /**
      * Get all the configuration for the extension
      *
      * @param  array  $values
@@ -23,28 +51,31 @@ class Proxmox extends Server
                 'type' => 'text',
                 'label' => 'Host',
                 'required' => true,
-                'description' => 'The IP address or domain name of the Proxmox server (with http:// or https://)',
+                'description' => 'The URL of the Proxmox server (e.g., https://proxmox.example.com)',
+                'validation' => 'url:http,https',
             ],
             [
                 'name' => 'port',
                 'type' => 'text',
                 'label' => 'Port',
                 'required' => true,
-                'description' => 'The port of the Proxmox server',
+                'description' => 'The port of the Proxmox server (default: 8006)',
+                'default' => '8006',
             ],
             [
                 'name' => 'username',
                 'type' => 'text',
-                'label' => 'Username',
+                'label' => 'API Username',
                 'required' => true,
-                'description' => 'The api username of the Proxmox server',
+                'description' => 'The API username (e.g., root@pam!token)',
             ],
             [
                 'name' => 'password',
                 'type' => 'text',
                 'label' => 'API Token',
                 'required' => true,
-                'description' => 'The API Token of the Proxmox server',
+                'description' => 'The API Token secret',
+                'encrypted' => true,
             ],
         ];
     }
@@ -56,116 +87,57 @@ class Proxmox extends Server
      */
     public function getProductConfig($values = []): array
     {
-        $nodes = $this->getRequest('/nodes');
-        if (! $nodes->json()) {
-            throw new Exception('Unable to get nodes');
-        }
+        $nodes = $this->request('/nodes');
         $nodeList = [];
-        foreach ($nodes->json()['data'] as $node) {
-            $nodeList[] = [
-                'name' => $node['node'],
-                'value' => $node['node'],
-            ];
+        foreach ($nodes['data'] as $node) {
+            $nodeList[$node['node']] = $node['node'];
         }
 
-        $currentNode = isset($values['node']) ? $values['node'] : null;
-        if ($currentNode == null) {
-            $currentNode = $nodeList[0]['value'];
-        }
-        $storage = $this->getRequest('/nodes/'.$currentNode.'/storage');
+        $currentNode = $values['node'] ?? array_key_first($nodeList);
+        
+        $storage = $this->request('/nodes/'.$currentNode.'/storage');
         $storageList = [];
-        if (! $storage->json()) {
-            throw new Exception('Unable to get storage');
-        }
-        foreach ($storage->json()['data'] as $storage) {
-            $storageList[] = [
-                'name' => $storage['storage'],
-                'value' => $storage['storage'],
-            ];
+        foreach ($storage['data'] as $storage) {
+            $storageList[$storage['storage']] = $storage['storage'];
         }
 
-        $resourcePool = $this->getRequest('/pools');
-        $poolList = [
-            [
-                'name' => 'None',
-                'value' => '',
-            ],
-        ];
-
-        if (! $resourcePool->json()) {
-            throw new Exception('Unable to get resource pool');
-        }
-        foreach ($resourcePool->json()['data'] as $pool) {
-            $poolList[] = [
-                'name' => $pool['poolid'],
-                'value' => $pool['poolid'],
-            ];
+        $resourcePool = $this->request('/pools');
+        $poolList = ['' => 'None'];
+        foreach ($resourcePool['data'] as $pool) {
+            $poolList[$pool['poolid']] = $pool['poolid'];
         }
 
         // Only list contentVztmpl
         $templateList = [];
         $isoList = [];
-        foreach ($nodeList as $node) {
+        foreach (array_keys($nodeList) as $nodeName) {
             // Get all storage
-            $storage = $this->getRequest('/nodes/'.$node['value'].'/storage');
-            if (! $storage->json()) {
-                throw new Exception('Unable to get storage');
-            }
-            foreach ($storage->json()['data'] as $storage) {
+            $storages = $this->request('/nodes/'.$nodeName.'/storage');
+            foreach ($storages['data'] as $storage) {
                 $storageName = $storage['storage'];
-                $template = $this->getRequest('/nodes/'.$node['value'].'/storage/'.$storageName.'/content');
-                if (! $template->json()) {
-                    throw new Exception('Unable to get template');
-                }
-                foreach ($template->json()['data'] as $template) {
+                $templates = $this->request('/nodes/'.$nodeName.'/storage/'.$storageName.'/content');
+                foreach ($templates['data'] as $template) {
                     if ($template['content'] == 'vztmpl') {
-                        $templateList[] = [
-                            'name' => $template['volid'],
-                            'value' => $template['volid'],
-                        ];
+                        $templateList[$template['volid']] = $template['volid'];
                     } elseif ($template['content'] == 'iso') {
-                        $isoList[] = [
-                            'name' => $template['volid'],
-                            'value' => $template['volid'],
-                        ];
+                        $isoList[$template['volid']] = $template['volid'];
                     }
                 }
             }
         }
 
         $bridgeList = [];
-        $bridge = $this->getRequest('/nodes/'.$currentNode.'/network');
-        if (! $bridge->json()) {
-            throw new Exception('Unable to get bridge');
-        }
-        foreach ($bridge->json()['data'] as $bridge) {
-            if (! isset($bridge['active'])) {
-                continue;
+        $bridges = $this->request('/nodes/'.$currentNode.'/network');
+        foreach ($bridges['data'] as $bridge) {
+            if (isset($bridge['active']) && $bridge['active']) {
+                $bridgeList[$bridge['iface']] = $bridge['iface'];
             }
-            if (! $bridge['active']) {
-                continue;
-            }
-            $bridgeList[] = [
-                'name' => $bridge['iface'],
-                'value' => $bridge['iface'],
-            ];
         }
 
-        $cpuList = [
-            [
-                'name' => 'Default',
-                'value' => '',
-            ],
-        ];
-        $cpu = $this->getRequest('/nodes/'.$currentNode.'/capabilities/qemu/cpu');
-        if (! $cpu->json()) {
-            throw new Exception('Unable to get cpu');
-        }
-        foreach ($cpu->json()['data'] as $cpu) {
-            $cpuList[] = [
-                'name' => $cpu['name'].' ('.$cpu['vendor'].')',
-                'value' => $cpu['name'],
-            ];
+        $cpuList = ['' => 'Default'];
+        $cpus = $this->request('/nodes/'.$currentNode.'/capabilities/qemu/cpu');
+        foreach ($cpus['data'] as $cpu) {
+            $cpuList[$cpu['name']] = $cpu['name'].' ('.$cpu['vendor'].')';
         }
 
         return [
@@ -503,56 +475,13 @@ class Proxmox extends Server
      */
     public function testConfig(): bool|string
     {
-        $response = $this->getRequest('/nodes');
-        if (! $response->json()) {
-            throw new Exception('Unable to get nodes');
+        try {
+            $this->request('/nodes');
+        } catch (Exception $e) {
+            return $e->getMessage();
         }
 
         return true;
-    }
-
-    private function getRequest($url)
-    {
-        $response = Http::withHeaders([
-            'Authorization' => 'PVEAPIToken='.$this->config('username').'='.$this->config('password'),
-            'Accept' => 'application/json',
-            'Content-Type' => 'application/json',
-        ])->withoutVerifying()->get($this->config('host').':'.$this->config('port').'/api2/json'.$url);
-
-        return $response;
-    }
-
-    private function postRequest($url, $data = [])
-    {
-        $response = Http::withHeaders([
-            'Authorization' => 'PVEAPIToken='.$this->config('username').'='.$this->config('password'),
-            'Accept' => 'application/json',
-            'Content-Type' => 'application/json',
-        ])->withoutVerifying()->post($this->config('host').':'.$this->config('port').'/api2/json'.$url, $data);
-
-        return $response;
-    }
-
-    private function deleteRequest($url)
-    {
-        $response = Http::withHeaders([
-            'Authorization' => 'PVEAPIToken='.$this->config('username').'='.$this->config('password'),
-            'Accept' => 'application/json',
-            'Content-Type' => 'application/json',
-        ])->withoutVerifying()->delete($this->config('host').':'.$this->config('port').'/api2/json'.$url);
-
-        return $response;
-    }
-
-    private function putRequest($url, $data = [])
-    {
-        $response = Http::withHeaders([
-            'Authorization' => 'PVEAPIToken='.$this->config('username').'='.$this->config('password'),
-            'Accept' => 'application/json',
-            'Content-Type' => 'application/json',
-        ])->withoutVerifying()->put($this->config('host').':'.$this->config('port').'/api2/json'.$url, $data);
-
-        return $response;
     }
 
     /**
@@ -576,7 +505,7 @@ class Proxmox extends Server
         $swap = $settings['swap'] ?? 512;
         $network_limit = $settings['network_limit'] ?? null;
 
-        $vmid = $this->getRequest('/cluster/nextid')->json()['data'];
+        $vmid = $this->request('/cluster/nextid')['data'];
 
         // Store vmid
         $service->properties()->updateOrCreate([
@@ -597,10 +526,7 @@ class Proxmox extends Server
             if (isset($pool)) {
                 $postData['pool'] = $pool;
             }
-            $response = $this->postRequest('/nodes/'.$node.'/'.$vmType.'/'.$settings['vmId'].'/clone', $postData);
-            if (! $response->json()) {
-                throw new Exception('Unable to clone server');
-            }
+            $this->request('/nodes/'.$node.'/'.$vmType.'/'.$settings['vmId'].'/clone', 'post', $postData);
 
             // Update hardware
             $postData = [
@@ -608,20 +534,17 @@ class Proxmox extends Server
                 'memory' => $memory,
                 'cipassword' => $properties['password'],
             ];
-            $response = $this->putRequest('/nodes/'.$node.'/'.$vmType.'/'.$vmid.'/config', $postData);
-            if (! $response->json()) {
-                throw new Exception('Unable to update hardware');
-            }
+            $this->request('/nodes/'.$node.'/'.$vmType.'/'.$vmid.'/config', 'put', $postData);
 
             // Get disk
-            $diskConfig = $this->getRequest('/nodes/'.$node.'/'.$vmType.'/'.$vmid.'/config')->json()['data'];
+            $diskConfig = $this->request('/nodes/'.$node.'/'.$vmType.'/'.$vmid.'/config')['data'];
             $diskName = explode('order=', $diskConfig['boot'])[1];
             $diskName = explode(',', $diskName)[0];
             $postData = [
                 'disk' => $diskName,
                 'size' => $disk.'G',
             ];
-            $response = $this->putRequest('/nodes/'.$node.'/'.$vmType.'/'.$vmid.'/resize', $postData);
+            $this->request('/nodes/'.$node.'/'.$vmType.'/'.$vmid.'/resize', 'put', $postData);
 
             return true;
         } elseif ($vmType == 'lxc') {
@@ -675,7 +598,7 @@ class Proxmox extends Server
             if (isset($pool)) {
                 $postData['pool'] = $pool;
             }
-            $response = $this->postRequest('/nodes/'.$node.'/lxc', $postData);
+            $this->request('/nodes/'.$node.'/lxc', 'post', $postData);
         } else {
             $socket = $settings['sockets'] ?? 1;
             $vcpu = $settings['vcpu'] ?? null;
@@ -710,10 +633,7 @@ class Proxmox extends Server
             if (isset($settings['os']) && $settings['os'] == 'iso') {
                 $postData['ide2'] = $settings['iso'].',media=cdrom';
             }
-            $response = $this->postRequest('/nodes/'.$node.'/qemu', $postData);
-        }
-        if (! $response->json()) {
-            throw new Exception('Unable to create server'.$response->body());
+            $this->request('/nodes/'.$node.'/qemu', 'post', $postData);
         }
 
         return true;
@@ -738,11 +658,7 @@ class Proxmox extends Server
         $node = $settings['node'];
 
         // Stop the VM
-        $response = $this->postRequest('/nodes/'.$node.'/'.$vmType.'/'.$vmid.'/status/stop');
-
-        if (! $response->successful()) {
-            throw new Exception('Unable to stop server');
-        }
+        $this->request('/nodes/'.$node.'/'.$vmType.'/'.$vmid.'/status/stop', 'post');
 
         return true;
     }
@@ -766,11 +682,7 @@ class Proxmox extends Server
         $node = $settings['node'];
 
         // Start the VM
-        $response = $this->postRequest('/nodes/'.$node.'/'.$vmType.'/'.$vmid.'/status/start');
-
-        if (! $response->successful()) {
-            throw new Exception('Unable to start server');
-        }
+        $this->request('/nodes/'.$node.'/'.$vmType.'/'.$vmid.'/status/start', 'post');
 
         return true;
     }
@@ -794,14 +706,10 @@ class Proxmox extends Server
         $node = $settings['node'];
 
         // Stop the VM first
-        $this->postRequest('/nodes/'.$node.'/'.$vmType.'/'.$vmid.'/status/stop');
+        $this->request('/nodes/'.$node.'/'.$vmType.'/'.$vmid.'/status/stop', 'post');
 
         // Delete the VM
-        $response = $this->deleteRequest('/nodes/'.$node.'/'.$vmType.'/'.$vmid.'?purge=1&destroy-unreferenced-disks=1');
-
-        if (! $response->successful()) {
-            throw new Exception('Unable to terminate server');
-        }
+        $this->request('/nodes/'.$node.'/'.$vmType.'/'.$vmid.'?purge=1&destroy-unreferenced-disks=1', 'delete');
 
         // Remove vmid property
         $service->properties()->where('key', 'vmid')->delete();
@@ -844,11 +752,7 @@ class Proxmox extends Server
         $vmid = $properties['vmid'];
         $node = $settings['node'];
 
-        $response = $this->postRequest('/nodes/'.$node.'/'.$vmType.'/'.$vmid.'/status/start');
-
-        if (! $response->successful()) {
-            throw new Exception('Unable to start server');
-        }
+        $this->request('/nodes/'.$node.'/'.$vmType.'/'.$vmid.'/status/start', 'post');
 
         return true;
     }
@@ -863,11 +767,7 @@ class Proxmox extends Server
         $vmid = $properties['vmid'];
         $node = $settings['node'];
 
-        $response = $this->postRequest('/nodes/'.$node.'/'.$vmType.'/'.$vmid.'/status/stop');
-
-        if (! $response->successful()) {
-            throw new Exception('Unable to stop server');
-        }
+        $this->request('/nodes/'.$node.'/'.$vmType.'/'.$vmid.'/status/stop', 'post');
 
         return true;
     }
@@ -882,11 +782,7 @@ class Proxmox extends Server
         $vmid = $properties['vmid'];
         $node = $settings['node'];
 
-        $response = $this->postRequest('/nodes/'.$node.'/'.$vmType.'/'.$vmid.'/status/reboot');
-
-        if (! $response->successful()) {
-            throw new Exception('Unable to reboot server');
-        }
+        $this->request('/nodes/'.$node.'/'.$vmType.'/'.$vmid.'/status/reboot', 'post');
 
         return true;
     }
