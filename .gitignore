@@ -20,5 +20,4 @@ yarn-error.log
 themes/*
 extensions/Others/Pages
 extensions/Servers/LicenseManager
-extensions/Servers/Proxmox
 !themes/default
