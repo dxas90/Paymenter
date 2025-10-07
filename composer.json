@@ -40,7 +40,7 @@
         "dedoc/scramble": "^0.12.21",
         "fakerphp/faker": "^1.23",
         "larastan/larastan": "^3.0",
-        "laravel/pint": "^1.13",
+        "laravel/pint": "*",
         "laravel/sail": "^1.26",
         "livewire/livewire": "^3.4",
         "mockery/mockery": "^1.6",
