@@ -48,20 +48,37 @@
 
 ## Getting Started
 
-#### Installation & Documentation
+### Backend Options
 
-For a detailed explanation of how to install and configure Paymenter, take a look at our [documentation here](https://paymenter.org/docs/getting-started/introduction/).
+Paymenter now offers two backend implementations:
+
+1. **PHP/Laravel Backend** (Original) - Located in the root directory
+2. **Python/FastAPI Backend** (New) - Located in the `python_backend/` directory
+
+Both backends share the same database schema and provide identical API functionality.
+
+#### PHP/Laravel Installation & Documentation
+
+For a detailed explanation of how to install and configure the PHP backend, take a look at our [documentation here](https://paymenter.org/docs/getting-started/introduction/).
 
 Or, get additional help via [Community Discord](https://discord.gg/xB4UUT3XQg).
 
+#### Python/FastAPI Backend
+
+For the Python backend implementation, see the [Python Backend README](python_backend/README.md).
+
 #### Requirements
 
-The requirements for Paymenter are the following:
-
-- PHP (8.2 or higher).
+**PHP Backend:**
+- PHP (8.2 or higher)
 - Composer
 - Webserver (Apache or Nginx)
 - Database (MariaDB)
+
+**Python Backend:**
+- Python (3.8 or higher)
+- pip
+- Database (MariaDB/MySQL)
 
 ## What is Paymenter?
 
