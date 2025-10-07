@@ -1,0 +1,42 @@
+version: '3.8'
+
+services:
+  # Python Backend API
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=mysql+pymysql://paymenter:paymenter_password@db:3306/paymenter
+      - SECRET_KEY=${SECRET_KEY:-your-secret-key-change-in-production}
+      - BACKEND_CORS_ORIGINS=http://localhost:3000,http://localhost:8000
+    depends_on:
+      - db
+    restart: unless-stopped
+    networks:
+      - paymenter-network
+
+  # MySQL Database (shared with PHP backend if needed)
+  db:
+    image: mariadb:10.11
+    environment:
+      - MYSQL_ROOT_PASSWORD=root_password
+      - MYSQL_DATABASE=paymenter
+      - MYSQL_USER=paymenter
+      - MYSQL_PASSWORD=paymenter_password
+    volumes:
+      - mysql_data:/var/lib/mysql
+    ports:
+      - "3306:3306"
+    restart: unless-stopped
+    networks:
+      - paymenter-network
+
+volumes:
+  mysql_data:
+
+networks:
+  paymenter-network:
+    driver: bridge
